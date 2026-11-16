@@ -1,0 +1,13 @@
+Description = "跨平台系统根证书信任库管理工具"
+
+[Details]
+Icon = "assets/icon.png"
+Name = "Trust Anchor"
+ID = "io.github.yinrg.trustanchor"
+Version = "0.1.0"
+Build = 4
+
+[LinuxAndBSD]
+GenericName = "Certificate Trust Manager"
+Categories = ["Utility"]
+Comment = "把内嵌根证书安装到系统受信任根证书存储"

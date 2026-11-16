@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Trust Anchor
+GenericName=Certificate Trust Manager
+Comment=把内嵌根证书安装到系统受信任根证书存储
+Exec=trustanchor
+Icon=io.github.yinrg.trustanchor
+Terminal=false
+Categories=Utility;
+Keywords=certificate;root ca;trust store;
+StartupNotify=true
+StartupWMClass=Trust Anchor

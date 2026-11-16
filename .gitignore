@@ -1,0 +1,18 @@
+# 构建产物
+/build/
+/tmp-pkg/
+/fyne-cross/
+/*.tar.xz
+/*.deb
+/*.app
+/*.exe
+*.syso
+*.test
+*.out
+
+# 本地环境
+.commandcode/
+.vscode/
+.idea/
+.DS_Store
+*.log
