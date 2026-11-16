@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -18,16 +19,20 @@ var crypt32 = windows.NewLazySystemDLL("crypt32.dll")
 
 var procCertAddEncodedCertificateToStore = crypt32.NewProc("CertAddEncodedCertificateToStore")
 
-func openMachineRoot() (windows.Handle, error) {
+func openMachineRoot(readonly bool) (windows.Handle, error) {
 	name, err := windows.UTF16PtrFromString("ROOT")
 	if err != nil {
 		return 0, err
+	}
+	flags := uint32(windows.CERT_SYSTEM_STORE_LOCAL_MACHINE)
+	if readonly {
+		flags |= windows.CERT_STORE_READONLY_FLAG
 	}
 	store, err := windows.CertOpenStore(
 		windows.CERT_STORE_PROV_SYSTEM_W,
 		0,
 		0,
-		windows.CERT_SYSTEM_STORE_LOCAL_MACHINE,
+		flags,
 		uintptr(unsafe.Pointer(name)),
 	)
 	if err != nil {
@@ -36,12 +41,16 @@ func openMachineRoot() (windows.Handle, error) {
 	return store, nil
 }
 
+// CertEnumCertificatesInStore 在枚举结束时返回 CRYPT_E_NOT_FOUND（系统存储）
+// 或 ERROR_NO_MORE_FILES（外部存储），两者都表示「没有更多证书」，不是错误。
+var errNoMoreCerts = syscall.Errno(windows.CRYPT_E_NOT_FOUND)
+
 func findCertificate(store windows.Handle, der []byte) (*windows.CertContext, error) {
 	var prev *windows.CertContext
 	for {
 		ctx, err := windows.CertEnumCertificatesInStore(store, prev)
 		if ctx == nil {
-			if err == nil || errors.Is(err, windows.ERROR_NO_MORE_FILES) {
+			if err == nil || errors.Is(err, windows.ERROR_NO_MORE_FILES) || errors.Is(err, errNoMoreCerts) {
 				return nil, nil
 			}
 			return nil, err
@@ -54,7 +63,7 @@ func findCertificate(store windows.Handle, der []byte) (*windows.CertContext, er
 }
 
 func queryStatus(_ *x509.Certificate, der []byte) (State, error) {
-	store, err := openMachineRoot()
+	store, err := openMachineRoot(true)
 	if err != nil {
 		return State{}, err
 	}
@@ -72,7 +81,7 @@ func queryStatus(_ *x509.Certificate, der []byte) (State, error) {
 }
 
 func installCert(der []byte) error {
-	store, err := openMachineRoot()
+	store, err := openMachineRoot(false)
 	if err != nil {
 		return err
 	}
@@ -100,7 +109,7 @@ func installCert(der []byte) error {
 }
 
 func uninstallCert(der []byte) error {
-	store, err := openMachineRoot()
+	store, err := openMachineRoot(false)
 	if err != nil {
 		return err
 	}
