@@ -4,8 +4,8 @@ Description = "跨平台系统根证书信任库管理工具"
 Icon = "assets/icon.png"
 Name = "Trust Anchor"
 ID = "io.github.yinrg.trustanchor"
-Version = "0.1.0"
-Build = 4
+Version = "0.1.1"
+Build = 5
 
 [LinuxAndBSD]
 GenericName = "Certificate Trust Manager"
