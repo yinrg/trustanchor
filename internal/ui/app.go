@@ -43,7 +43,7 @@ type appUI struct {
 func Run(a fyne.App) {
 	u := &appUI{fyneApp: a}
 	u.win = a.NewWindow(AppName)
-	u.win.SetIcon(assets.Icon())
+	u.win.SetIcon(assets.WindowIcon())
 	u.win.Resize(fyne.NewSize(600, 520))
 	u.win.CenterOnScreen()
 	u.win.SetContent(u.buildContent())

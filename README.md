@@ -164,6 +164,8 @@ make icon
 
 图标生成器是纯 Go 实现（`tools/genicon`）：`assets/logo.svg` 是主标志，`assets/logo-small.svg` 用于小于 48px 的尺寸，避免任务栏小图标糊成一团。渲染时先按 512×512 原生出图，再按面积平均缩放到各尺寸，保证描边粗细一致。
 
+窗口与托盘图标使用 64×64 的 `assets/icons/64x64.png`（`assets.WindowIcon()`）。X11 对 `_NET_WM_ICON` 的请求体积有上限，512×512 的 ARGB 数据写不进去，而 GLFW 会静默忽略这个错误——所以窗口图标不能直接用 512 那张。512×512 的 `assets/icon.png` 只用于打包和桌面主题。
+
 ### 交叉编译
 
 Windows amd64 可以直接在 Linux 上用 MinGW-w64 交叉编译：

@@ -12,7 +12,7 @@ func (u *appUI) setupTray() {
 	if !ok {
 		return
 	}
-	desk.SetSystemTrayIcon(assets.Icon())
+	desk.SetSystemTrayIcon(assets.WindowIcon())
 	desk.SetSystemTrayWindow(u.win)
 	desk.SetSystemTrayMenu(fyne.NewMenu("",
 		fyne.NewMenuItem("显示主窗口", func() {
