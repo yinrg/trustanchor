@@ -27,28 +27,35 @@ const (
 )
 
 type appUI struct {
-	fyneApp  fyne.App
-	win      fyne.Window
-	status   *widget.Label
-	checkBtn *widget.Button
-	checking atomic.Bool
+	fyneApp fyne.App
+	win     fyne.Window
 
-	certState   *widget.Label
-	certDetail  *widget.Label
-	certInstall *widget.Button
-	certRemove  *widget.Button
-	certBusy    atomic.Bool
+	hero       *widget.RichText
+	heroSub    *widget.Label
+	validity   *widget.Label
+	primaryBtn *widget.Button
+	detailsBtn *widget.Button
+	refreshBtn *widget.Button
+
+	updateBtn    *widget.Button
+	footerStatus *widget.Label
+
+	checking  atomic.Bool
+	certBusy  atomic.Bool
+	lastState truststore.State
+	hasState  bool
 }
 
 func Run(a fyne.App) {
 	u := &appUI{fyneApp: a}
 	u.win = a.NewWindow(AppName)
 	u.win.SetIcon(assets.WindowIcon())
-	u.win.Resize(fyne.NewSize(600, 520))
+	u.win.Resize(fyne.NewSize(480, 430))
 	u.win.CenterOnScreen()
 	u.win.SetContent(u.buildContent())
 	u.win.SetMainMenu(u.buildMenu())
 	u.setupTray()
+	u.win.SetCloseIntercept(u.fyneApp.Quit)
 	u.win.Show()
 
 	time.AfterFunc(300*time.Millisecond, u.refreshCA)
@@ -60,48 +67,6 @@ func Run(a fyne.App) {
 	})
 
 	a.Run()
-}
-
-func (u *appUI) buildContent() fyne.CanvasObject {
-	title := widget.NewLabelWithStyle(AppName, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	subtitle := widget.NewLabel("系统根证书信任库管理")
-	subtitle.Importance = widget.LowImportance
-
-	u.status = widget.NewLabel("")
-	u.status.Wrapping = fyne.TextWrapWord
-	u.checkBtn = widget.NewButtonWithIcon("检查更新", theme.ViewRefreshIcon(), func() {
-		go u.checkForUpdate(true)
-	})
-
-	summary := container.NewVBox(
-		title,
-		subtitle,
-		widget.NewSeparator(),
-		widget.NewForm(
-			widget.NewFormItem("版本", widget.NewLabel(version.Version)),
-			widget.NewFormItem("构建", widget.NewLabel(version.Commit+" · "+version.Date)),
-			widget.NewFormItem("平台", widget.NewLabel(version.Platform())),
-		),
-	)
-
-	updateCard := widget.NewCard("更新", "", container.NewVBox(
-		container.NewHBox(u.checkBtn, u.status),
-		newCheckOnStartItem(u.fyneApp),
-	))
-
-	body := container.NewVBox(summary, widget.NewSeparator(), u.buildCertCard(), updateCard)
-	scroll := container.NewVScroll(body)
-	scroll.SetMinSize(fyne.NewSize(540, 400))
-	return container.NewPadded(scroll)
-}
-
-func newCheckOnStartItem(a fyne.App) fyne.CanvasObject {
-	prefs := a.Preferences()
-	check := widget.NewCheck("启动时检查更新", func(checked bool) {
-		prefs.SetBool(prefCheckUpdates, checked)
-	})
-	check.SetChecked(prefs.BoolWithFallback(prefCheckUpdates, true))
-	return check
 }
 
 func (u *appUI) buildMenu() *fyne.MainMenu {
@@ -117,15 +82,6 @@ func (u *appUI) buildMenu() *fyne.MainMenu {
 		fyne.NewMenuItem("关于 "+AppName, u.showAbout),
 	)
 	return fyne.NewMainMenu(file, help)
-}
-
-func (u *appUI) showAbout() {
-	dialog.ShowCustom("关于 "+AppName, "关闭", container.NewVBox(
-		widget.NewLabelWithStyle(AppName, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		widget.NewLabel("版本 "+version.Summary()),
-		widget.NewLabel(version.Platform()),
-		widget.NewLabel("系统根证书信任库管理"),
-	), u.win)
 }
 
 func (u *appUI) checkForUpdate(manual bool) {
@@ -144,30 +100,56 @@ func (u *appUI) checkForUpdate(manual bool) {
 		return
 	}
 
-	u.setStatus("正在检查更新…")
+	if manual {
+		u.onUI(func() {
+			u.updateBtn.SetText("检查中…")
+			u.updateBtn.Disable()
+		})
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	update, err := updater.Check(ctx)
+	upd, err := updater.Check(ctx)
 	switch {
 	case err != nil:
-		u.setStatus("检查更新失败")
-		if manual {
-			u.onUI(func() {
+		u.onUI(func() {
+			u.resetUpdateButton()
+			if manual {
 				dialog.ShowError(fmt.Errorf("检查更新失败：%w", err), u.win)
-			})
-		}
-	case update == nil:
-		u.setStatus("已是最新版本")
-		if manual {
-			u.onUI(func() {
+			}
+		})
+	case upd == nil:
+		u.onUI(func() {
+			u.resetUpdateButton()
+			u.footerStatus.SetText("已是最新版本")
+			if manual {
 				dialog.ShowInformation("检查更新", "当前已是最新版本。", u.win)
-			})
-		}
+			}
+		})
 	default:
-		u.setStatus("发现新版本 " + update.Version)
-		u.showUpdate(update)
+		u.onUI(func() {
+			u.updateBtn.Enable()
+			u.updateBtn.SetIcon(theme.DownloadIcon())
+			u.updateBtn.SetText("发现新版本 " + upd.Version)
+			u.updateBtn.Importance = widget.HighImportance
+			u.updateBtn.OnTapped = func() { u.showUpdate(upd) }
+			u.updateBtn.Refresh()
+			u.footerStatus.SetText("")
+			if manual {
+				u.showUpdate(upd)
+			}
+		})
 	}
+}
+
+func (u *appUI) resetUpdateButton() {
+	u.updateBtn.SetIcon(theme.ViewRefreshIcon())
+	u.updateBtn.SetText("检查更新")
+	u.updateBtn.Importance = widget.LowImportance
+	u.updateBtn.OnTapped = func() { go u.checkForUpdate(true) }
+	u.updateBtn.Enable()
+	u.updateBtn.Refresh()
 }
 
 func (u *appUI) showUpdate(upd *updater.Update) {
@@ -217,11 +199,11 @@ func (u *appUI) install(upd *updater.Update) {
 	u.onUI(func() {
 		progress.Hide()
 		if err != nil {
-			u.status.SetText("更新失败")
+			u.footerStatus.SetText("更新失败")
 			dialog.ShowError(fmt.Errorf("更新失败：%w", err), u.win)
 			return
 		}
-		u.status.SetText("更新完成，重启后生效")
+		u.footerStatus.SetText("更新完成，重启后生效")
 		dialog.ShowCustomConfirm("更新完成", "立即退出", "稍后",
 			widget.NewLabel("新版本已安装，重新启动应用后生效。"), func(ok bool) {
 				if ok {
@@ -229,10 +211,6 @@ func (u *appUI) install(upd *updater.Update) {
 				}
 			}, u.win)
 	})
-}
-
-func (u *appUI) setStatus(text string) {
-	u.onUI(func() { u.status.SetText(text) })
 }
 
 func (u *appUI) onUI(fn func()) {
@@ -250,54 +228,9 @@ func (u *appUI) openURL(raw string) {
 	}
 }
 
-func (u *appUI) buildCertCard() fyne.CanvasObject {
-	u.certState = widget.NewLabel("正在检测…")
-	u.certDetail = widget.NewLabel("")
-	u.certDetail.TextStyle = fyne.TextStyle{Monospace: true}
-	u.certDetail.Wrapping = fyne.TextWrapBreak
-
-	u.certInstall = widget.NewButtonWithIcon("安装到系统", theme.ConfirmIcon(), func() { go u.installCA() })
-	u.certRemove = widget.NewButtonWithIcon("从系统移除", theme.DeleteIcon(), u.confirmRemoveCA)
-	u.certRemove.Disable()
-
-	return widget.NewCard("根证书", "写入系统受信任根证书存储（本机所有用户生效）", container.NewVBox(
-		u.certState,
-		u.certDetail,
-		widget.NewSeparator(),
-		container.NewHBox(
-			u.certInstall,
-			u.certRemove,
-			widget.NewButtonWithIcon("刷新", theme.ViewRefreshIcon(), func() { go u.refreshCA() }),
-		),
-		widget.NewLabel("安装需要管理员授权。Firefox 使用独立证书库，需另行导入或启用企业根证书策略。"),
-	))
-}
-
 func (u *appUI) refreshCA() {
 	st, err := truststore.Status()
 	u.onUI(func() { u.applyCAState(st, err) })
-}
-
-func (u *appUI) applyCAState(st truststore.State, err error) {
-	if err != nil {
-		u.certState.SetText("检测失败：" + err.Error())
-		u.certDetail.SetText("")
-		u.certInstall.Disable()
-		u.certRemove.Disable()
-		return
-	}
-	if st.Installed {
-		u.certState.SetText("已安装 · " + st.Location)
-		u.certInstall.Disable()
-		u.certRemove.Enable()
-	} else {
-		u.certState.SetText("未安装 · " + st.Location)
-		u.certInstall.Enable()
-		u.certRemove.Disable()
-	}
-	u.certDetail.SetText(fmt.Sprintf("SHA-256\n%s\n\n主体 %s\n有效期 %s 至 %s",
-		st.Fingerprint, st.Subject,
-		st.NotBefore.Format("2006-01-02"), st.NotAfter.Format("2006-01-02")))
 }
 
 func (u *appUI) installCA() {
@@ -306,11 +239,7 @@ func (u *appUI) installCA() {
 	}
 	defer u.certBusy.Store(false)
 
-	u.onUI(func() {
-		u.certState.SetText("正在请求管理员授权…")
-		u.certInstall.Disable()
-		u.certRemove.Disable()
-	})
+	u.onUI(func() { u.setBusyState("正在请求管理员授权…") })
 
 	st, err := truststore.EnsureInstalled()
 	u.onUI(func() {
@@ -320,7 +249,7 @@ func (u *appUI) installCA() {
 			return
 		}
 		u.applyCAState(st, nil)
-		dialog.ShowInformation("根证书", "已安装到系统受信任根证书存储。", u.win)
+		u.footerStatus.SetText("已安装到系统受信任根证书存储")
 	})
 }
 
@@ -330,11 +259,7 @@ func (u *appUI) removeCA() {
 	}
 	defer u.certBusy.Store(false)
 
-	u.onUI(func() {
-		u.certState.SetText("正在请求管理员授权…")
-		u.certInstall.Disable()
-		u.certRemove.Disable()
-	})
+	u.onUI(func() { u.setBusyState("正在请求管理员授权…") })
 
 	st, err := truststore.EnsureUninstalled()
 	u.onUI(func() {
@@ -344,7 +269,7 @@ func (u *appUI) removeCA() {
 			return
 		}
 		u.applyCAState(st, nil)
-		dialog.ShowInformation("根证书", "已从系统信任库移除。", u.win)
+		u.footerStatus.SetText("已从系统信任库移除")
 	})
 }
 
